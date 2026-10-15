@@ -42,7 +42,18 @@ export async function GET(request: Request, { params }: { params: { name: string
     }
     if (!decoded) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
     if (!mayView(decoded, allowedEmails(process.env.ALLOWED_EMAILS))) {
-      return NextResponse.json({ error: "This account is not on the list for this dashboard." }, { status: 403 });
+      // Says which address was refused and whether a list was set at all:
+      // the two ways this goes wrong look the same otherwise.
+      const listed = allowedEmails(process.env.ALLOWED_EMAILS).size;
+      const who = decoded.email ?? "this account";
+      return NextResponse.json(
+        {
+          error: listed
+            ? `${who} is not on the list for this dashboard (ALLOWED_EMAILS).`
+            : `No one is allowed yet: ALLOWED_EMAILS was empty when this was deployed. Set it, then deploy again. (Signed in as ${who}.)`,
+        },
+        { status: 403 },
+      );
     }
   }
 
