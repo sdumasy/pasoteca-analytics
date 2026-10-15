@@ -72,7 +72,7 @@ jobs:
             --service-account "analytics-dashboard@$PROJECT.iam.gserviceaccount.com" \
             --allow-unauthenticated \
             --memory 512Mi --max-instances 2 \
-            --set-env-vars "^@^GCP_PROJECT=$PROJECT@GA_DATASET=${{ vars.GA_DATASET }}@FS_DATASET=firestore_export@ALLOWED_EMAILS=${{ vars.ALLOWED_EMAILS }}" \
+            --set-env-vars "^@^GCP_PROJECT=$PROJECT@GA_DATASET=${{ vars.GA_DATASET || secrets.GA_DATASET }}@FS_DATASET=firestore_export@ALLOWED_EMAILS=${{ vars.ALLOWED_EMAILS || secrets.ALLOWED_EMAILS }}" \
             2> deploy.log
           status=$?
           if [ "$status" -ne 0 ]; then
