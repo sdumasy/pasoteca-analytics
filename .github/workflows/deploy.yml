@@ -1,0 +1,52 @@
+name: Deploy
+
+# Tests on every push; main also builds the image and puts it on Cloud Run
+# in the app's production project, next to the data it reads.
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+env:
+  PROJECT: p-pasoteca
+  REGION: europe-west1
+  SERVICE: pasoteca-analytics
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_DEMO: "1"
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Build the image
+        run: |
+          gcloud builds submit --project "$PROJECT" --region "$REGION" --config cloudbuild.yaml \
+            --substitutions=_IMAGE="$REGION-docker.pkg.dev/$PROJECT/pasoteca/$SERVICE:${GITHUB_SHA::12}"
+      - name: Put it on Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" \
+            --image "$REGION-docker.pkg.dev/$PROJECT/pasoteca/$SERVICE:${GITHUB_SHA::12}" \
+            --service-account "analytics-dashboard@$PROJECT.iam.gserviceaccount.com" \
+            --allow-unauthenticated \
+            --memory 512Mi --max-instances 2 \
+            --set-env-vars "^@^GCP_PROJECT=$PROJECT@GA_DATASET=${{ vars.GA_DATASET }}@FS_DATASET=firestore_export@ALLOWED_EMAILS=${{ vars.ALLOWED_EMAILS }}"

@@ -1,0 +1,14 @@
+# Builds the dashboard's image with the public Firebase web settings baked in.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_IMAGE}
+      - --build-arg=NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyAmgTsAcQKvetH0o0XSYmz6MpXBB9QHbBo
+      - --build-arg=NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=p-pasoteca.firebaseapp.com
+      - --build-arg=NEXT_PUBLIC_FIREBASE_PROJECT_ID=p-pasoteca
+      - --build-arg=NEXT_PUBLIC_FIREBASE_APP_ID=1:1051936864789:web:bfd472adb55ecb464cac1c
+      - .
+images:
+  - ${_IMAGE}
