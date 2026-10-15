@@ -65,19 +65,32 @@ jobs:
             sleep 10
           done
       - name: Put it on Cloud Run
+        env:
+          # A variable or a secret, either will do; trimmed, because a value
+          # pasted into GitHub's box can end in a line break.
+          GA_DATASET_VALUE: ${{ vars.GA_DATASET || secrets.GA_DATASET }}
+          ALLOWED_EMAILS_VALUE: ${{ vars.ALLOWED_EMAILS || secrets.ALLOWED_EMAILS }}
         run: |
           set +e
+          trim() { printf '%s' "$1" | tr -d '\r\n' | sed 's/^ *//; s/ *$//'; }
+          {
+            echo "GCP_PROJECT: \"$PROJECT\""
+            echo "FS_DATASET: \"firestore_export\""
+            echo "GA_DATASET: \"$(trim "$GA_DATASET_VALUE")\""
+            echo "ALLOWED_EMAILS: \"$(trim "$ALLOWED_EMAILS_VALUE")\""
+          } > env.yaml
           gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" \
             --image "$REGION-docker.pkg.dev/$PROJECT/pasoteca/$SERVICE:${GITHUB_SHA::12}" \
             --service-account "analytics-dashboard@$PROJECT.iam.gserviceaccount.com" \
             --allow-unauthenticated \
             --memory 512Mi --max-instances 2 \
-            --set-env-vars "^@^GCP_PROJECT=$PROJECT@GA_DATASET=${{ vars.GA_DATASET || secrets.GA_DATASET }}@FS_DATASET=firestore_export@ALLOWED_EMAILS=${{ vars.ALLOWED_EMAILS || secrets.ALLOWED_EMAILS }}" \
+            --env-vars-file env.yaml \
             2> deploy.log
           status=$?
           if [ "$status" -ne 0 ]; then
-            grep -v '^$' deploy.log | tail -8 | while read -r line; do echo "::error title=Cloud Run deploy::$line"; done
+            grep -v '^$' deploy.log | grep -iv "help\|--" | tail -6 | while read -r line; do echo "::error title=Cloud Run deploy::$line"; done
           fi
+          [ -z "$(trim "$ALLOWED_EMAILS_VALUE")" ] && echo "::warning title=ALLOWED_EMAILS::empty, nobody can see the dashboard"
           url=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format='value(status.url)' 2>/dev/null)
           [ -n "$url" ] && echo "::notice title=Dashboard::$url"
           exit "$status"
