@@ -7,7 +7,10 @@ let client: BigQuery | null = null;
 /// wrapper objects for dates and big numbers, which JSON would mangle.
 export async function run(query: Query, project: string): Promise<Row[]> {
   client ??= new BigQuery({ projectId: project });
-  const [rows] = await client.query({ query: query.sql, params: query.params, useLegacySql: false });
+  // Both datasets live in europe-west2. Named here, because a query whose
+  // table does not exist yet otherwise runs in the US and says so.
+  const location = process.env.BQ_LOCATION ?? "europe-west2";
+  const [rows] = await client.query({ query: query.sql, params: query.params, useLegacySql: false, location });
   return rows.map((row: Record<string, unknown>) => {
     const out: Row = {};
     for (const [key, value] of Object.entries(row)) out[key] = plain(value);
