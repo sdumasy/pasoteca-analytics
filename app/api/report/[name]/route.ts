@@ -34,7 +34,10 @@ export async function GET(request: Request, { params }: { params: { name: string
     let decoded = null;
     try {
       decoded = token ? await admin().verifyIdToken(token) : null;
-    } catch {
+    } catch (e) {
+      // Shows in Cloud Run's logs, where a token that will not verify is
+      // otherwise a silent 401.
+      console.error("token did not verify", e instanceof Error ? e.message : e);
       decoded = null;
     }
     if (!decoded) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
@@ -50,20 +53,30 @@ export async function GET(request: Request, { params }: { params: { name: string
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return NextResponse.json(hit.body);
 
-  const gaDataset = process.env.GA_DATASET;
-  if (!gaDataset) return NextResponse.json({ error: "GA_DATASET is not set: link Google Analytics to BigQuery first." }, { status: 500 });
-
-  const queries = queriesFor(name, { project: PROJECT, gaDataset, fsDataset: process.env.FS_DATASET ?? "firestore_export" }, days);
+  // Until Google Analytics' export exists, the parts drawn from the app's own
+  // data still answer; the rest say what they are waiting for.
+  const gaDataset = process.env.GA_DATASET ?? "";
+  const queries = queriesFor(
+    name,
+    { project: PROJECT, gaDataset: gaDataset || "GA_DATASET_NOT_SET", fsDataset: process.env.FS_DATASET ?? "firestore_export" },
+    days,
+  );
   const sections: Record<string, Row[]> = {};
   const errors: Record<string, string> = {};
   await Promise.all(
     Object.entries(queries).map(async ([section, query]) => {
+      if (!gaDataset && query.sql.includes("GA_DATASET_NOT_SET")) {
+        errors[section] = "Waiting for the Google Analytics export: set GA_DATASET once its dataset exists.";
+        sections[section] = [];
+        return;
+      }
       try {
         sections[section] = await run(query, PROJECT);
       } catch (e) {
         // One table not there yet (the GA export's first day, a collection
         // never written) must not blank the rest of the page.
         errors[section] = e instanceof Error ? e.message.split("\n")[0] : String(e);
+        console.error(`${name}/${section}`, errors[section]);
         sections[section] = [];
       }
     }),

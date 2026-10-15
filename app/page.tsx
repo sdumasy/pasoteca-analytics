@@ -46,6 +46,7 @@ export default function Page() {
   const [days, setDays] = useState<number>(30);
   const [reports, setReports] = useState<Partial<Record<ReportName, Report>>>({});
   const [problem, setProblem] = useState<string | null>(null);
+  const [failed, setFailed] = useState<Partial<Record<ReportName, string>>>({});
 
   useEffect(() => {
     if (DEMO) return;
@@ -59,16 +60,31 @@ export default function Page() {
     if (!DEMO && !user) return;
     setProblem(null);
     setReports({});
+    setFailed({});
     const token = DEMO ? "" : await user!.getIdToken();
     await Promise.all(
       QUESTIONS.map(async ({ id }) => {
-        const res = await fetch(`/api/report/${id}?days=${days}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
-        const body = await res.json();
-        if (!res.ok) {
-          setProblem(body.error ?? `Could not load ${id}.`);
-          return;
+        // Each question fails on its own and says why, rather than leaving
+        // "Loading…" up for good.
+        try {
+          const res = await fetch(`/api/report/${id}?days=${days}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+          const text = await res.text();
+          let body: { error?: string } & Partial<Report> = {};
+          try {
+            body = JSON.parse(text);
+          } catch {
+            body = { error: `The server answered ${res.status} without data.` };
+          }
+          if (!res.ok) {
+            const message = body.error ?? `The server answered ${res.status}.`;
+            setFailed((f) => ({ ...f, [id]: message }));
+            if (res.status === 401 || res.status === 403) setProblem(message);
+            return;
+          }
+          setReports((r) => ({ ...r, [id]: body as Report }));
+        } catch (e) {
+          setFailed((f) => ({ ...f, [id]: e instanceof Error ? e.message : String(e) }));
         }
-        setReports((r) => ({ ...r, [id]: body }));
       }),
     );
   }, [user, days]);
@@ -119,7 +135,13 @@ export default function Page() {
       {QUESTIONS.map((q) => (
         <section key={q.id} id={q.id} className="question">
           <h2>{q.title}</h2>
-          {reports[q.id] ? <Answer id={q.id} report={reports[q.id]!} days={days} /> : <p className="loading">Loading…</p>}
+          {reports[q.id] ? (
+            <Answer id={q.id} report={reports[q.id]!} days={days} />
+          ) : failed[q.id] ? (
+            <p className="section-error">{failed[q.id]}</p>
+          ) : (
+            <p className="loading">Loading…</p>
+          )}
           {Object.entries(reports[q.id]?.errors ?? {}).map(([section, message]) => (
             <p key={section} className="section-error">
               {section}: {message}
