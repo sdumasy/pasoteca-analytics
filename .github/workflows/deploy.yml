@@ -39,14 +39,45 @@ jobs:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
       - uses: google-github-actions/setup-gcloud@v2
       - name: Build the image
+        # Started without streaming its logs (that needs project Viewer, and
+        # failed the step even when the build was fine), then waited on.
+        # Errors are written as annotations: the step's own log is not always
+        # reachable.
         run: |
-          gcloud builds submit --project "$PROJECT" --region "$REGION" --config cloudbuild.yaml \
-            --substitutions=_IMAGE="$REGION-docker.pkg.dev/$PROJECT/pasoteca/$SERVICE:${GITHUB_SHA::12}"
+          set +e
+          IMAGE="$REGION-docker.pkg.dev/$PROJECT/pasoteca/$SERVICE:${GITHUB_SHA::12}"
+          id=$(gcloud builds submit --project "$PROJECT" --region "$REGION" --config cloudbuild.yaml \
+            --substitutions=_IMAGE="$IMAGE" --async --format='value(id)' 2> submit.log)
+          if [ -z "$id" ]; then
+            grep -v '^$' submit.log | tail -8 | while read -r line; do echo "::error title=Build submit::$line"; done
+            exit 1
+          fi
+          echo "Build $id"
+          while true; do
+            status=$(gcloud builds describe "$id" --project "$PROJECT" --region "$REGION" --format='value(status)')
+            case "$status" in
+              SUCCESS) break ;;
+              FAILURE|INTERNAL_ERROR|TIMEOUT|CANCELLED|EXPIRED)
+                detail=$(gcloud builds describe "$id" --project "$PROJECT" --region "$REGION" --format='value(failureInfo.detail)')
+                echo "::error title=Build $status::$detail"
+                exit 1 ;;
+            esac
+            sleep 10
+          done
       - name: Put it on Cloud Run
         run: |
+          set +e
           gcloud run deploy "$SERVICE" --project "$PROJECT" --region "$REGION" \
             --image "$REGION-docker.pkg.dev/$PROJECT/pasoteca/$SERVICE:${GITHUB_SHA::12}" \
             --service-account "analytics-dashboard@$PROJECT.iam.gserviceaccount.com" \
             --allow-unauthenticated \
             --memory 512Mi --max-instances 2 \
-            --set-env-vars "^@^GCP_PROJECT=$PROJECT@GA_DATASET=${{ vars.GA_DATASET }}@FS_DATASET=firestore_export@ALLOWED_EMAILS=${{ vars.ALLOWED_EMAILS }}"
+            --set-env-vars "^@^GCP_PROJECT=$PROJECT@GA_DATASET=${{ vars.GA_DATASET }}@FS_DATASET=firestore_export@ALLOWED_EMAILS=${{ vars.ALLOWED_EMAILS }}" \
+            2> deploy.log
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            grep -v '^$' deploy.log | tail -8 | while read -r line; do echo "::error title=Cloud Run deploy::$line"; done
+          fi
+          url=$(gcloud run services describe "$SERVICE" --project "$PROJECT" --region "$REGION" --format='value(status.url)' 2>/dev/null)
+          [ -n "$url" ] && echo "::notice title=Dashboard::$url"
+          exit "$status"
