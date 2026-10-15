@@ -56,3 +56,8 @@ test("only a verified address on the list may see the numbers", () => {
   assert.ok(!mayView(null, allowed));
   assert.ok(!mayView({ email: "owner@example.com", email_verified: true }, allowedEmails("")));
 });
+
+test("a first visit on the web counts as opening the app", () => {
+  const q = queriesFor("funnel", { project: "p", gaDataset: "a", fsDataset: "f" }, 30).steps;
+  assert.match(q.sql, /first_visit/);
+});

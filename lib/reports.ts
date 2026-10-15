@@ -64,7 +64,10 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
           // them reached each step since, with the median time it took.
           sql: `
             WITH ev AS (
-              SELECT user_pseudo_id AS u, event_name AS n, TIMESTAMP_MICROS(event_timestamp) AS t
+              -- The web app records first_visit where the phone apps record
+              -- first_open; both are the dancer arriving.
+              SELECT user_pseudo_id AS u, IF(event_name = 'first_visit', 'first_open', event_name) AS n,
+                TIMESTAMP_MICROS(event_timestamp) AS t
               FROM ${events} WHERE ${inRange}
             ),
             newcomers AS (SELECT u, MIN(t) AS first_t FROM ev WHERE n = 'first_open' GROUP BY u),
