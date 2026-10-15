@@ -67,6 +67,35 @@ export function demoReport(name: ReportName): Record<string, Row[]> {
         })),
         totals: [{ accounts: 388, classes: 419, moves: 1406, sessions: 612, rated_moves: 1121 }],
       };
+    case "styles":
+      return {
+        danceStyles: [
+          { name: "Bachata", classes: 214, dancers: 61 },
+          { name: "Salsa", classes: 133, dancers: 42 },
+          { name: "Kizomba", classes: 38, dancers: 14 },
+          { name: "Zouk", classes: 21, dancers: 6 },
+        ],
+        schools: [
+          { name: "Extremos", classes: 96, dancers: 23 },
+          { name: "DanceFree", classes: 71, dancers: 19 },
+          { name: "Nueva Guardia", classes: 44, dancers: 12 },
+          { name: "EPA Dance Studio", classes: 30, dancers: 9 },
+        ],
+        instructors: [
+          { name: "Jeremy & Linsey", classes: 58, dancers: 17 },
+          { name: "Diego & Yasmin", classes: 41, dancers: 13 },
+          { name: "Dani & Adel", classes: 33, dancers: 11 },
+        ],
+      };
+    case "ideas":
+      return {
+        top: [
+          { title: "Slow-motion playback for clips", status: "planned", votes: 34, posted: "2026-09-02" },
+          { title: "Share a whole practice session", status: "open", votes: 21, posted: "2026-09-18" },
+          { title: "Count-in beat before each move", status: "open", votes: 17, posted: "2026-09-25" },
+          { title: "Dark mode for the clipper", status: "done", votes: 9, posted: "2026-08-14" },
+        ],
+      };
     case "friction":
       return {
         clipper: [

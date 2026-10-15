@@ -33,9 +33,11 @@ const QUESTIONS: { id: ReportName; title: string }[] = [
   { id: "retention", title: "Do they come back?" },
   { id: "weekly", title: "How busy is the app, week to week?" },
   { id: "loop", title: "Is the class → moves → practice loop working?" },
+  { id: "styles", title: "Which styles, schools and teachers?" },
   { id: "friction", title: "Where does it get in the way?" },
   { id: "sharing", title: "Does sharing bring dancers in?" },
   { id: "money", title: "Does the paywall convert?" },
+  { id: "ideas", title: "What do dancers ask for?" },
 ];
 
 const RANGES = [7, 30, 90] as const;
@@ -275,6 +277,63 @@ function Answer({ id, report, days }: { id: ReportName; report: Report; days: nu
             />
           </Card>
         </>
+      );
+    }
+    case "styles": {
+      const rows = (key: string) =>
+        (s[key] ?? []).map((r) => ({ label: String(r.name), value: num(r.dancers), detail: `${num(r.classes)} classes logged` }));
+      const top = s.danceStyles?.[0];
+      return (
+        <>
+          <Tiles
+            items={[
+              { label: "Most danced style", value: top ? String(top.name) : "–", note: top ? `${num(top.dancers)} dancers` : undefined },
+              { label: "Schools seen", value: String((s.schools ?? []).length) + ((s.schools ?? []).length >= 12 ? "+" : "") },
+            ]}
+          />
+          <Card title="Dance styles" note="Dancers who logged at least one class in each style, all time.">
+            <Breakdown unit="dancers" rows={rows("danceStyles")} />
+          </Card>
+          <Card title="Schools" note="Where dancers take their classes: places to reach more of them.">
+            <Breakdown unit="dancers" rows={rows("schools")} />
+          </Card>
+          <Card title="Teachers">
+            <Breakdown unit="dancers" rows={rows("instructors")} />
+          </Card>
+        </>
+      );
+    }
+    case "ideas": {
+      const ideas = s.top ?? [];
+      return (
+        <Card title="Ideas board, most votes first" note="All time. Who posted an idea is not copied into the dashboard's data.">
+          {ideas.length === 0 ? (
+            <p className="empty">No ideas posted yet.</p>
+          ) : (
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Idea</th>
+                    <th>Status</th>
+                    <th>Votes</th>
+                    <th>Posted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ideas.map((idea, i) => (
+                    <tr key={i}>
+                      <td>{String(idea.title)}</td>
+                      <td>{String(idea.status)}</td>
+                      <td className="num">{num(idea.votes)}</td>
+                      <td>{String(idea.posted ?? "")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
       );
     }
     case "friction": {

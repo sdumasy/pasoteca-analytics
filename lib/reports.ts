@@ -21,7 +21,7 @@ export interface Query {
   params?: Record<string, unknown>;
 }
 
-export const REPORT_NAMES = ["funnel", "retention", "weekly", "loop", "friction", "sharing", "money"] as const;
+export const REPORT_NAMES = ["funnel", "retention", "weekly", "loop", "styles", "friction", "sharing", "money", "ideas"] as const;
 export type ReportName = (typeof REPORT_NAMES)[number];
 
 export function isReportName(name: string): name is ReportName {
@@ -180,6 +180,41 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
               (SELECT COUNT(*) FROM ${fs("moves")}) AS moves,
               (SELECT COUNT(*) FROM ${fs("practice_sessions")}) AS sessions,
               (SELECT COUNTIF(SAFE_CAST(JSON_VALUE(data, '$.masteryUser') AS INT64) > 0) FROM ${fs("moves")}) AS rated_moves`,
+        },
+      };
+
+    case "styles": {
+      // Classes and the dancers behind them, by a field of the class. Names
+      // are compared trimmed and case-blind, so "Bachata " and "bachata"
+      // are one style.
+      const by = (field: string) => ({
+        sql: `
+          SELECT ANY_VALUE(TRIM(JSON_VALUE(data, '$.${field}'))) AS name,
+            COUNT(*) AS classes,
+            COUNT(DISTINCT JSON_VALUE(data, '$.userId')) AS dancers
+          FROM ${fs("classes")}
+          WHERE TRIM(IFNULL(JSON_VALUE(data, '$.${field}'), '')) != ''
+          GROUP BY LOWER(TRIM(JSON_VALUE(data, '$.${field}')))
+          ORDER BY dancers DESC, classes DESC
+          LIMIT 12`,
+      });
+      return { danceStyles: by("danceStyle"), schools: by("school"), instructors: by("instructor") };
+    }
+
+    case "ideas":
+      return {
+        top: {
+          // The ideas board, most wanted first. Only the idea itself: who
+          // posted it is left out of the copy.
+          sql: `
+            SELECT JSON_VALUE(data, '$.title') AS title,
+              IFNULL(JSON_VALUE(data, '$.status'), 'open') AS status,
+              IFNULL(SAFE_CAST(JSON_VALUE(data, '$.voteCount') AS INT64), 0) AS votes,
+              FORMAT_TIMESTAMP('%Y-%m-%d', TIMESTAMP(JSON_VALUE(data, '$.createdAt'))) AS posted
+            FROM ${fs("ideas")}
+            WHERE JSON_VALUE(data, '$.title') IS NOT NULL
+            ORDER BY votes DESC, posted DESC
+            LIMIT 20`,
         },
       };
 
