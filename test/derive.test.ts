@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert";
 import { funnel, biggestDrop, cohorts, averageRetention, duration, percent } from "../lib/derive.ts";
 import { demoReport } from "../lib/demo.ts";
-import { queriesFor, REPORT_NAMES, suffix } from "../lib/reports.ts";
+import { queriesFor, REPORT_NAMES, suffix, periodOf } from "../lib/reports.ts";
 import { allowedEmails, mayView } from "../lib/access.ts";
 
 test("the funnel gives each step its share of the start and of the step before", () => {
@@ -35,7 +35,7 @@ test("waits and shares read as people say them", () => {
 
 test("every report has queries, and every query names the configured datasets", () => {
   for (const name of REPORT_NAMES) {
-    const queries = queriesFor(name, { project: "p", gaDataset: "analytics_1", fsDataset: "fs" }, 30, new Date("2026-10-15T00:00:00Z"));
+    const queries = queriesFor(name, { project: "p", gaDataset: "analytics_1", fsDataset: "fs" }, { from: "2026-09-15", to: "2026-10-15" });
     assert.ok(Object.keys(queries).length > 0, name);
     for (const q of Object.values(queries)) assert.match(q.sql, /`p\.(analytics_1|fs)\./);
     // Demo data has the same sections, so the page draws both alike.
@@ -60,9 +60,9 @@ test("only a verified address on the list may see the numbers", () => {
 test("only dancers with an account count: the funnel, the cohorts and the active dancers", () => {
   const config = { project: "p", gaDataset: "a", fsDataset: "f" };
   for (const q of [
-    queriesFor("funnel", config, 30).steps,
-    queriesFor("retention", config, 30).cohorts,
-    queriesFor("weekly", config, 30).weeks,
+    queriesFor("funnel", config, { from: "2026-10-01", to: "2026-10-15" }).steps,
+    queriesFor("retention", config, { from: "2026-10-01", to: "2026-10-15" }).cohorts,
+    queriesFor("weekly", config, { from: "2026-10-01", to: "2026-10-15" }).weeks,
   ]) {
     assert.match(q.sql, /loginTypes/);
     assert.match(q.sql, /user_id IN/);
@@ -70,17 +70,24 @@ test("only dancers with an account count: the funnel, the cohorts and the active
 });
 
 test("the cohort table is not named like its column", () => {
-  const q = queriesFor("retention", { project: "p", gaDataset: "a", fsDataset: "f" }, 30).cohorts;
+  const q = queriesFor("retention", { project: "p", gaDataset: "a", fsDataset: "f" }, { from: "2026-10-01", to: "2026-10-15" }).cohorts;
   assert.doesNotMatch(q.sql, /\bcohort AS \(/);
 });
 
-import { firstDay, sinceSuffix } from "../lib/reports.ts";
+test("the period is put in order and kept to real days", () => {
+  const fallback = { from: "2026-10-01", to: "2026-10-16" };
+  assert.deepEqual(periodOf("2026-10-10", "2026-10-12", fallback), { from: "2026-10-10", to: "2026-10-12" });
+  assert.deepEqual(periodOf("2026-10-12", "2026-10-10", fallback), { from: "2026-10-10", to: "2026-10-12" });
+  assert.deepEqual(periodOf("yesterday", null, fallback), fallback);
+});
 
-test("Analytics is read from the start date when it is later than the period", () => {
-  const now = new Date(Date.UTC(2026, 9, 20));
-  assert.equal(firstDay(now, 30, "20261016"), "20261016");
-  assert.equal(firstDay(now, 2, "20261016"), "20261018");
-  assert.equal(firstDay(now, 30, undefined), "20260920");
-  assert.equal(sinceSuffix("2026-10-16"), "20261016");
-  assert.equal(sinceSuffix("soon"), undefined);
+test("every query is held to the period: Analytics by table day, app data by the day it was made", () => {
+  for (const name of REPORT_NAMES) {
+    for (const [section, q] of Object.entries(queriesFor(name, { project: "p", gaDataset: "a", fsDataset: "f" }, { from: "2026-10-01", to: "2026-10-15" }))) {
+      if (name === "health" && section !== "events") continue;
+      if (/@from\b/.test(q.sql)) assert.equal(q.params?.from, "20261001", `${name}/${section}`);
+      if (q.sql.includes("@fromDate")) assert.equal(q.params?.fromDate, "2026-10-01", `${name}/${section}`);
+      assert.ok(/@from|@fromDate/.test(q.sql), `${name}/${section} ignores the period`);
+    }
+  }
 });

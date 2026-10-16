@@ -14,21 +14,27 @@ export interface ReportConfig {
   project: string;
   gaDataset: string;
   fsDataset: string;
-  /// `YYYYMMDD`: Analytics before this day is test traffic and never counted.
-  since?: string;
 }
 
-/// The first day an Analytics query reads: [days] back, but never before
-/// [since], the day the app's real use began.
-export function firstDay(now: Date, days: number, since?: string): string {
-  const back = suffix(now, days);
-  return since && /^\d{8}$/.test(since) && since > back ? since : back;
+/// The days a report covers, both included, as `YYYY-MM-DD`.
+export interface Period {
+  from: string;
+  to: string;
 }
 
-/// `YYYY-MM-DD` (as configured) to the GA tables' `YYYYMMDD`, or undefined.
-export function sinceSuffix(value: string | undefined): string | undefined {
-  const digits = (value ?? "").replaceAll("-", "").trim();
-  return /^\d{8}$/.test(digits) ? digits : undefined;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/// A period from the page's `from` and `to`, put in order and kept to real
+/// days; [fallback] for whatever is missing or malformed.
+export function periodOf(from: string | null, to: string | null, fallback: Period): Period {
+  const a = from && DAY.test(from) ? from : fallback.from;
+  const b = to && DAY.test(to) ? to : fallback.to;
+  return a <= b ? { from: a, to: b } : { from: b, to: a };
+}
+
+/// `YYYY-MM-DD`, [daysBack] days before [now] (UTC).
+export function dayBefore(now: Date, daysBack: number): string {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - daysBack)).toISOString().slice(0, 10);
 }
 
 export interface Query {
@@ -64,10 +70,15 @@ const str = (key: string) => `(SELECT value.string_value FROM UNNEST(event_param
 const int = (key: string) => `(SELECT value.int_value FROM UNNEST(event_params) WHERE key = '${key}')`;
 
 /// The queries behind [name], keyed by the section of the page they fill.
-export function queriesFor(name: ReportName, config: ReportConfig, days: number, now = new Date()): Record<string, Query> {
+export function queriesFor(name: ReportName, config: ReportConfig, period: Period): Record<string, Query> {
   const events = `\`${config.project}.${config.gaDataset}.events_*\``;
   const fs = (table: string) => `\`${config.project}.${config.fsDataset}.${table}\``;
-  const range = { from: firstDay(now, days, config.since), to: suffix(now, 0) };
+  // Analytics tables by their day suffix; the app's own documents by the
+  // day they were made. Both ends included.
+  const range = { from: period.from.replaceAll("-", ""), to: period.to.replaceAll("-", "") };
+  const dates = { fromDate: period.from, toDate: period.to };
+  const made = (alias = "") =>
+    `DATE(TIMESTAMP(JSON_VALUE(${alias ? `${alias}.` : ""}data, '$.createdAt'))) BETWEEN DATE(@fromDate) AND DATE(@toDate)`;
   const inRange = `_TABLE_SUFFIX BETWEEN @from AND @to`;
   // Dancers with a real account (email, Google or Apple), by their uid,
   // which is also the Analytics user_id. Guests, Play's test bots and anyone
@@ -191,11 +202,13 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
               SELECT c.id, COUNT(m.id) AS moves
               FROM ${fs("classes")} c
               LEFT JOIN ${fs("moves")} m ON JSON_VALUE(m.data, '$.classId') = c.id
+              WHERE ${made("c")}
               GROUP BY c.id
             )
             SELECT CASE WHEN moves >= 10 THEN '10+' WHEN moves >= 5 THEN '5–9' ELSE CAST(moves AS STRING) END AS bucket,
               MIN(moves) AS sort, COUNT(*) AS classes
             FROM per_class GROUP BY bucket ORDER BY sort`,
+          params: dates,
         },
         timeToClip: {
           // Days from logging a class to cutting its first move.
@@ -205,6 +218,7 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
                 TIMESTAMP(JSON_VALUE(c.data, '$.createdAt')) AS logged,
                 MIN(TIMESTAMP(JSON_VALUE(m.data, '$.createdAt'))) AS clipped
               FROM ${fs("classes")} c JOIN ${fs("moves")} m ON JSON_VALUE(m.data, '$.classId') = c.id
+              WHERE ${made("c")}
               GROUP BY c.id, logged
             )
             SELECT
@@ -212,6 +226,7 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
               COUNTIF(TIMESTAMP_DIFF(clipped, logged, HOUR) < 24) AS same_day,
               COUNT(*) AS clipped_classes
             FROM firsts WHERE logged IS NOT NULL AND clipped IS NOT NULL`,
+          params: dates,
         },
         masteryByAge: {
           // The average rating of moves by how long ago they were cut: rising
@@ -221,18 +236,20 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
               ROUND(AVG(SAFE_CAST(JSON_VALUE(data, '$.masteryUser') AS FLOAT64)), 2) AS avg_mastery,
               COUNT(*) AS moves
             FROM ${fs("moves")}
-            WHERE JSON_VALUE(data, '$.createdAt') IS NOT NULL
+            WHERE JSON_VALUE(data, '$.createdAt') IS NOT NULL AND ${made()}
               AND SAFE_CAST(JSON_VALUE(data, '$.masteryUser') AS FLOAT64) > 0
             GROUP BY weeks_old HAVING weeks_old <= 12 ORDER BY weeks_old`,
+          params: dates,
         },
         totals: {
           sql: `
             SELECT
-              (SELECT COUNT(*) FROM ${fs("users")}) AS accounts,
-              (SELECT COUNT(*) FROM ${fs("classes")}) AS classes,
-              (SELECT COUNT(*) FROM ${fs("moves")}) AS moves,
-              (SELECT COUNT(*) FROM ${fs("practice_sessions")}) AS sessions,
-              (SELECT COUNTIF(SAFE_CAST(JSON_VALUE(data, '$.masteryUser') AS INT64) > 0) FROM ${fs("moves")}) AS rated_moves`,
+              (SELECT COUNT(*) FROM ${fs("users")} WHERE id IN ${accounts}) AS accounts,
+              (SELECT COUNT(*) FROM ${fs("classes")} WHERE ${made()}) AS classes,
+              (SELECT COUNT(*) FROM ${fs("moves")} WHERE ${made()}) AS moves,
+              (SELECT COUNT(*) FROM ${fs("practice_sessions")} WHERE ${made()}) AS sessions,
+              (SELECT COUNTIF(SAFE_CAST(JSON_VALUE(data, '$.masteryUser') AS INT64) > 0) FROM ${fs("moves")} WHERE ${made()}) AS rated_moves`,
+          params: dates,
         },
       };
 
@@ -246,10 +263,11 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
             COUNT(*) AS classes,
             COUNT(DISTINCT JSON_VALUE(data, '$.userId')) AS dancers
           FROM ${fs("classes")}
-          WHERE TRIM(IFNULL(JSON_VALUE(data, '$.${field}'), '')) != ''
+          WHERE TRIM(IFNULL(JSON_VALUE(data, '$.${field}'), '')) != '' AND ${made()}
           GROUP BY LOWER(TRIM(JSON_VALUE(data, '$.${field}')))
           ORDER BY dancers DESC, classes DESC
           LIMIT 12`,
+        params: dates,
       });
       return { danceStyles: by("danceStyle"), schools: by("school"), instructors: by("instructor") };
     }
@@ -265,9 +283,10 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
               IFNULL(SAFE_CAST(JSON_VALUE(data, '$.voteCount') AS INT64), 0) AS votes,
               FORMAT_TIMESTAMP('%Y-%m-%d', TIMESTAMP(JSON_VALUE(data, '$.createdAt'))) AS posted
             FROM ${fs("ideas")}
-            WHERE JSON_VALUE(data, '$.title') IS NOT NULL
+            WHERE JSON_VALUE(data, '$.title') IS NOT NULL AND ${made()}
             ORDER BY votes DESC, posted DESC
             LIMIT 20`,
+          params: dates,
         },
       };
 
@@ -334,7 +353,8 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
             SELECT IFNULL(JSON_VALUE(data, '$.status'), 'pending') AS status,
               IF(JSON_QUERY(data, '$.classSnapshot') IS NOT NULL, 'class', 'move') AS kind,
               COUNT(*) AS shares
-            FROM ${fs("move_shares")} GROUP BY status, kind ORDER BY shares DESC`,
+            FROM ${fs("move_shares")} WHERE ${made()} GROUP BY status, kind ORDER BY shares DESC`,
+          params: dates,
         },
         push: {
           sql: `

@@ -5,7 +5,7 @@ import { initializeApp, getApps } from "firebase/app";
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User } from "firebase/auth";
 import { Breakdown, Card, CohortGrid, Funnel, Tiles, TrendLine, WeeklyMultiples } from "@/components/charts";
 import { averageRetention, biggestDrop, cohorts, duration, funnel, num, percent, share } from "@/lib/derive";
-import type { ReportName, Row } from "@/lib/reports";
+import type { Period, ReportName, Row } from "@/lib/reports";
 
 const DEMO = process.env.NEXT_PUBLIC_DEMO === "1";
 
@@ -26,8 +26,8 @@ interface Report {
   demo: boolean;
   sections: Sections;
   errors?: Record<string, string>;
-  /// The day counting starts, `YYYY-MM-DD`.
-  since?: string;
+  /// The days the answer covers.
+  period?: Period;
 }
 
 const QUESTIONS: { id: ReportName; title: string }[] = [
@@ -43,12 +43,121 @@ const QUESTIONS: { id: ReportName; title: string }[] = [
   { id: "ideas", title: "What do dancers ask for?" },
 ];
 
-const RANGES = [7, 30, 90] as const;
+const PRESETS = [7, 30, 90] as const;
+
+/// The first day the slider reaches back to: the app's first users.
+const FIRST_DAY = "2026-09-01";
+/// Where the page starts: the day real use began (see COUNT_FROM on the
+/// server), or the last 30 days before that day has come.
+const COUNT_FROM = "2026-10-17";
+
+const today = () => new Date().toISOString().slice(0, 10);
+const addDays = (day: string, n: number) => {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+const daysBetween = (a: string, b: string) =>
+  Math.round((new Date(`${b}T00:00:00Z`).getTime() - new Date(`${a}T00:00:00Z`).getTime()) / 86_400_000);
+const startPeriod = (): Period => {
+  const t = today();
+  return { from: COUNT_FROM <= t ? COUNT_FROM : addDays(t, -30), to: t };
+};
+const shortDay = (day: string) =>
+  new Date(`${day}T00:00:00Z`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+
+/// Start and end of the period every question answers for: two dates, a
+/// slider between them, and the usual "last N days". Changes settle for a
+/// moment before the page asks again, so dragging does not fire a query a
+/// step.
+function PeriodBar({ period, onChange }: { period: Period; onChange: (p: Period) => void }) {
+  const [draft, setDraft] = useState(period);
+  useEffect(() => setDraft(period), [period]);
+  useEffect(() => {
+    if (draft.from === period.from && draft.to === period.to) return;
+    const timer = setTimeout(() => onChange(draft), 450);
+    return () => clearTimeout(timer);
+  }, [draft, period, onChange]);
+
+  const last = today();
+  const span = Math.max(1, daysBetween(FIRST_DAY, last));
+  const a = Math.max(0, daysBetween(FIRST_DAY, draft.from));
+  const b = Math.max(0, daysBetween(FIRST_DAY, draft.to));
+  const preset = PRESETS.find((n) => draft.to === last && draft.from === addDays(last, -n + 1));
+  return (
+    <div className="period">
+      <div className="period-dates">
+        <label>
+          <span className="tile-label">From</span>
+          <input
+            type="date"
+            min={FIRST_DAY}
+            max={draft.to}
+            value={draft.from}
+            onChange={(e) => e.target.value && setDraft((d) => ({ ...d, from: e.target.value }))}
+          />
+        </label>
+        <div
+          className="dual"
+          style={{ ["--a" as string]: `${(a / span) * 100}%`, ["--b" as string]: `${(b / span) * 100}%` }}
+        >
+          <div className="dual-track" aria-hidden="true">
+            <div className="dual-fill" />
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={span}
+            value={a}
+            aria-label="Start of the period"
+            aria-valuetext={shortDay(draft.from)}
+            onChange={(e) => setDraft((d) => ({ ...d, from: addDays(FIRST_DAY, Math.min(Number(e.target.value), b)) }))}
+          />
+          <input
+            type="range"
+            min={0}
+            max={span}
+            value={b}
+            aria-label="End of the period"
+            aria-valuetext={shortDay(draft.to)}
+            onChange={(e) => setDraft((d) => ({ ...d, to: addDays(FIRST_DAY, Math.max(Number(e.target.value), a)) }))}
+          />
+          <div className="dual-ends" aria-hidden="true">
+            <span>{shortDay(FIRST_DAY)}</span>
+            <span>Today</span>
+          </div>
+        </div>
+        <label>
+          <span className="tile-label">To</span>
+          <input
+            type="date"
+            min={draft.from}
+            max={last}
+            value={draft.to}
+            onChange={(e) => e.target.value && setDraft((d) => ({ ...d, to: e.target.value }))}
+          />
+        </label>
+      </div>
+      <div className="range" role="group" aria-label="Quick periods">
+        {PRESETS.map((n) => (
+          <button
+            key={n}
+            className={preset === n ? "on" : ""}
+            aria-pressed={preset === n}
+            onClick={() => setDraft({ from: addDays(last, -n + 1), to: last })}
+          >
+            Last {n} days
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function Page() {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(DEMO);
-  const [days, setDays] = useState<number>(30);
+  const [period, setPeriod] = useState<Period>(startPeriod);
   const [reports, setReports] = useState<Partial<Record<ReportName, Report>>>({});
   const [problem, setProblem] = useState<string | null>(null);
   const [failed, setFailed] = useState<Partial<Record<ReportName, string>>>({});
@@ -72,7 +181,7 @@ export default function Page() {
         // Each question fails on its own and says why, rather than leaving
         // "Loading…" up for good.
         try {
-          const res = await fetch(`/api/report/${id}?days=${days}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+          const res = await fetch(`/api/report/${id}?from=${period.from}&to=${period.to}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
           const text = await res.text();
           let body: { error?: string } & Partial<Report> = {};
           try {
@@ -92,7 +201,7 @@ export default function Page() {
         }
       }),
     );
-  }, [user, days]);
+  }, [user, period]);
 
   useEffect(() => {
     void load();
@@ -108,18 +217,11 @@ export default function Page() {
       <header className="top">
         <div>
           <div className="eyebrow">
-            Pasoteca · production{Object.values(reports).find((r) => r?.since)?.since ? ` · counting from ${Object.values(reports).find((r) => r?.since)!.since}` : ""}
+            Pasoteca · production · {shortDay(period.from)} to {shortDay(period.to)}
           </div>
           <h1>How dancers use the app</h1>
         </div>
         <div className="top-controls">
-          <div className="range" role="group" aria-label="Period">
-            {RANGES.map((r) => (
-              <button key={r} className={r === days ? "on" : ""} onClick={() => setDays(r)} aria-pressed={r === days}>
-                {r} days
-              </button>
-            ))}
-          </div>
           {!DEMO ? (
             <button className="link" onClick={() => signOut(auth())}>
               Sign out
@@ -127,6 +229,8 @@ export default function Page() {
           ) : null}
         </div>
       </header>
+
+      <PeriodBar period={period} onChange={setPeriod} />
 
       {isDemo ? <p className="banner">Sample data: these numbers are made up, to show the layout.</p> : null}
       {problem ? <p className="banner error">{problem}</p> : null}
@@ -143,7 +247,7 @@ export default function Page() {
         <section key={q.id} id={q.id} className="question">
           <h2>{q.title}</h2>
           {reports[q.id] ? (
-            <Answer id={q.id} report={reports[q.id]!} days={days} />
+            <Answer id={q.id} report={reports[q.id]!} />
           ) : failed[q.id] ? (
             <p className="section-error">{failed[q.id]}</p>
           ) : (
@@ -185,7 +289,7 @@ function SignIn() {
   );
 }
 
-function Answer({ id, report, days }: { id: ReportName; report: Report; days: number }) {
+function Answer({ id, report }: { id: ReportName; report: Report }) {
   const s = report.sections;
   const first = (key: string) => s[key]?.[0] ?? {};
   switch (id) {
@@ -230,7 +334,7 @@ function Answer({ id, report, days }: { id: ReportName; report: Report; days: nu
         <>
           <Tiles
             items={[
-              { label: `New accounts, last ${days} days`, value: opened.toLocaleString() },
+              { label: "New accounts in this period", value: opened.toLocaleString() },
               { label: "Cut a first move", value: percent(steps[2]?.ofStart ?? null), note: `median ${duration(steps[2]?.medianMinutes ?? null)} after first opening` },
               { label: "Finished a session", value: percent(steps[4]?.ofStart ?? null) },
               { label: "Weakest step", value: weakest?.label ?? "–", note: weakest ? `${percent(weakest.ofPrevious)} of the step before` : undefined },

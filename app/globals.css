@@ -76,6 +76,41 @@ h3 { font-size: 15px; font-weight: 600; margin: 0; }
 .link { border: 0; background: none; color: var(--brand-text); font-weight: 600; padding: 0; }
 .primary { border: 0; background: var(--accent); color: #fff9f0; font-weight: 700; padding: 12px 22px; margin-top: 8px; }
 
+/* The period: two dates with a two-handled slider between them. Sticks to
+   the top while scrolling, since it governs every answer below. */
+.period {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between;
+  margin: 20px 0 0; padding: 12px 16px;
+  background: var(--surface); border: 1px solid var(--line);
+}
+.period-dates { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: center; flex: 1 1 520px; min-width: 0; }
+.period label { display: grid; gap: 4px; }
+.period input[type="date"] {
+  font: inherit; font-size: 14px; color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line); padding: 6px 8px; color-scheme: inherit;
+}
+.dual { position: relative; flex: 1 1 220px; min-width: 180px; height: 40px; }
+.dual-track { position: absolute; left: 0; right: 0; top: 12px; height: 6px; background: var(--track); }
+.dual-fill { position: absolute; top: 0; bottom: 0; left: var(--a); right: calc(100% - var(--b)); background: var(--brand); }
+.dual input[type="range"] {
+  position: absolute; left: 0; right: 0; top: 4px; width: 100%; height: 22px; margin: 0;
+  background: none; pointer-events: none; appearance: none; -webkit-appearance: none;
+}
+.dual input[type="range"]::-webkit-slider-runnable-track { background: none; height: 22px; }
+.dual input[type="range"]::-moz-range-track { background: none; }
+.dual input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; pointer-events: auto; width: 18px; height: 18px; margin-top: 2px;
+  border-radius: 50%; background: var(--surface); border: 3px solid var(--brand); cursor: grab;
+}
+.dual input[type="range"]::-moz-range-thumb {
+  pointer-events: auto; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--surface); border: 3px solid var(--brand); cursor: grab;
+}
+.dual input[type="range"]:focus-visible { outline: none; }
+.dual input[type="range"]:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--brand); outline-offset: 2px; }
+.dual-ends { position: absolute; left: 0; right: 0; top: 26px; display: flex; justify-content: space-between; font-size: 11px; color: var(--mute); }
+
 .banner { margin: 20px 0 0; padding: 10px 14px; background: var(--surface); border: 1px solid var(--line); color: var(--sub); }
 .banner.error, .section-error { color: var(--accent-text); }
 .section-error { font-size: 13px; margin: 8px 0 0; }

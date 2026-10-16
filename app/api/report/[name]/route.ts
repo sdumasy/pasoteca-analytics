@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cert, getApps, initializeApp, applicationDefault } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { isReportName, queriesFor, sinceSuffix, type Row } from "@/lib/reports";
+import { dayBefore, isReportName, periodOf, queriesFor, type Row } from "@/lib/reports";
 import { demoReport } from "@/lib/demo";
 import { allowedEmails, mayView } from "@/lib/access";
 import { run } from "@/lib/bigquery";
@@ -10,9 +10,9 @@ export const dynamic = "force-dynamic";
 
 const PROJECT = process.env.GCP_PROJECT ?? "p-pasoteca";
 const DEMO = process.env.DEMO === "1";
-/// The day real use began; Analytics from before it was testing. Moved by
-/// setting COUNT_FROM (YYYY-MM-DD) on the service.
-const SINCE = process.env.COUNT_FROM ?? "2026-10-17";
+/// The day real use began, where a page that asks for no period starts.
+/// Moved by setting COUNT_FROM (YYYY-MM-DD) on the service.
+const COUNT_FROM = process.env.COUNT_FROM ?? "2026-10-17";
 
 function admin() {
   if (getApps().length === 0) {
@@ -60,10 +60,15 @@ export async function GET(request: Request, { params }: { params: { name: string
     }
   }
 
-  const days = Math.min(365, Math.max(7, Number(new URL(request.url).searchParams.get("days")) || 30));
+  const search = new URL(request.url).searchParams;
+  const today = dayBefore(new Date(), 0);
+  const period = periodOf(search.get("from"), search.get("to"), {
+    from: COUNT_FROM < today ? COUNT_FROM : dayBefore(new Date(), 30),
+    to: today,
+  });
   if (DEMO) return NextResponse.json({ demo: true, sections: demoReport(name) });
 
-  const key = `${name}:${days}`;
+  const key = `${name}:${period.from}:${period.to}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) return NextResponse.json(hit.body);
 
@@ -76,9 +81,8 @@ export async function GET(request: Request, { params }: { params: { name: string
       project: PROJECT,
       gaDataset: gaDataset || "GA_DATASET_NOT_SET",
       fsDataset: process.env.FS_DATASET ?? "firestore_export",
-      since: sinceSuffix(SINCE),
     },
-    days,
+    period,
   );
   const sections: Record<string, Row[]> = {};
   const errors: Record<string, string> = {};
@@ -100,7 +104,7 @@ export async function GET(request: Request, { params }: { params: { name: string
       }
     }),
   );
-  const body = { demo: false, days, since: SINCE, sections, errors };
+  const body = { demo: false, period, sections, errors };
   cache.set(key, { at: Date.now(), body });
   return NextResponse.json(body);
 }
