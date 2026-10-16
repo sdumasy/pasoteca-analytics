@@ -21,7 +21,7 @@ export interface Query {
   params?: Record<string, unknown>;
 }
 
-export const REPORT_NAMES = ["funnel", "retention", "weekly", "loop", "styles", "friction", "sharing", "money", "ideas"] as const;
+export const REPORT_NAMES = ["health", "funnel", "retention", "weekly", "loop", "styles", "friction", "sharing", "money", "ideas"] as const;
 export type ReportName = (typeof REPORT_NAMES)[number];
 
 export function isReportName(name: string): name is ReportName {
@@ -57,6 +57,37 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
   const inRange = `_TABLE_SUFFIX BETWEEN @from AND @to`;
 
   switch (name) {
+    case "health":
+      return {
+        // Whether Google Analytics' export exists, how far it reaches and
+        // when it last grew: an empty page is either no dancers or no data.
+        ga: {
+          sql: `
+            SELECT COUNT(*) AS tables,
+              MIN(REGEXP_EXTRACT(table_id, r'(\\d{8})$')) AS first_day,
+              MAX(REGEXP_EXTRACT(table_id, r'(\\d{8})$')) AS last_day,
+              SUM(row_count) AS events,
+              FORMAT_TIMESTAMP('%Y-%m-%d %H:%M', TIMESTAMP_MILLIS(MAX(last_modified_time)), 'Europe/Amsterdam') AS updated
+            FROM \`${config.project}.${config.gaDataset}.__TABLES__\`
+            WHERE STARTS_WITH(table_id, 'events_')`,
+        },
+        // What the app actually sent in the period, by event.
+        events: {
+          sql: `
+            SELECT event_name, COUNT(*) AS events, COUNT(DISTINCT user_pseudo_id) AS users
+            FROM ${events} WHERE ${inRange}
+            GROUP BY event_name ORDER BY events DESC LIMIT 25`,
+          params: range,
+        },
+        // The nightly copy of the app's own data, table by table.
+        firestore: {
+          sql: `
+            SELECT table_id AS collection, row_count AS docs,
+              FORMAT_TIMESTAMP('%Y-%m-%d %H:%M', TIMESTAMP_MILLIS(last_modified_time), 'Europe/Amsterdam') AS updated
+            FROM ${fs("__TABLES__")} ORDER BY table_id`,
+        },
+      };
+
     case "funnel":
       return {
         steps: {

@@ -12,6 +12,21 @@ const weeksBack = (n: number) => {
 
 export function demoReport(name: ReportName): Record<string, Row[]> {
   switch (name) {
+    case "health":
+      return {
+        ga: [{ tables: 34, first_day: "20260913", last_day: "20261015", events: 48210, updated: "2026-10-16 06:12" }],
+        events: [
+          { event_name: "screen_view", events: 21004, users: 388 },
+          { event_name: "first_open", events: 412, users: 412 },
+          { event_name: "class_created", events: 690, users: 233 },
+          { event_name: "move_clipped", events: 1880, users: 151 },
+        ],
+        firestore: [
+          { collection: "classes", docs: 690, updated: "2026-10-16 03:16" },
+          { collection: "moves", docs: 1880, updated: "2026-10-16 03:16" },
+          { collection: "users", docs: 412, updated: "2026-10-16 03:16" },
+        ],
+      };
     case "funnel": {
       const users = [412, 233, 151, 118, 84, 71, 39, 11];
       const minutes = [0, 9, 26, 31, 1440, 1460, 2880, 4320];

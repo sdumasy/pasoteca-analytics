@@ -29,6 +29,7 @@ interface Report {
 }
 
 const QUESTIONS: { id: ReportName; title: string }[] = [
+  { id: "health", title: "Is the data coming in?" },
   { id: "funnel", title: "Do new dancers get to their first move?" },
   { id: "retention", title: "Do they come back?" },
   { id: "weekly", title: "How busy is the app, week to week?" },
@@ -184,6 +185,36 @@ function Answer({ id, report, days }: { id: ReportName; report: Report; days: nu
   const s = report.sections;
   const first = (key: string) => s[key]?.[0] ?? {};
   switch (id) {
+    case "health": {
+      const ga = first("ga");
+      const day = (d: unknown) => (typeof d === "string" && d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}` : "–");
+      const events = s.events ?? [];
+      const firestore = s.firestore ?? [];
+      return (
+        <>
+          <Tiles
+            items={[
+              { label: "Analytics days exported", value: num(ga.tables).toLocaleString(), note: `${day(ga.first_day)} to ${day(ga.last_day)}` },
+              { label: "Analytics events", value: num(ga.events).toLocaleString(), note: ga.updated ? `last written ${ga.updated}` : "nothing exported yet" },
+              {
+                label: "App data copied",
+                value: firestore.reduce((a, r) => a + num(r.docs), 0).toLocaleString(),
+                note: firestore[0]?.updated ? `last copy ${firestore[0].updated}` : "no nightly copy yet",
+              },
+            ]}
+          />
+          <Card
+            title="What the app sent in this period"
+            note="Every Analytics event with how many dancers sent it. first_open only comes from a fresh install, so phones that had the app before the export began never count as new dancers."
+          >
+            <Breakdown unit="events" rows={events.map((e) => ({ label: String(e.event_name), value: num(e.events), detail: `${num(e.users)} dancers` }))} />
+          </Card>
+          <Card title="The nightly copy of the app's data" note="Documents per collection in the last copy, made at 03:15 Amsterdam time.">
+            <Breakdown unit="documents" rows={firestore.map((r) => ({ label: String(r.collection), value: num(r.docs), detail: `copied ${r.updated}` }))} />
+          </Card>
+        </>
+      );
+    }
     case "funnel": {
       const steps = funnel(s.steps ?? []);
       const weakest = biggestDrop(steps);
