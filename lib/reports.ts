@@ -42,7 +42,7 @@ export interface Query {
   params?: Record<string, unknown>;
 }
 
-export const REPORT_NAMES = ["health", "funnel", "retention", "weekly", "loop", "styles", "friction", "sharing", "money", "ideas"] as const;
+export const REPORT_NAMES = ["glance", "health", "funnel", "retention", "weekly", "loop", "styles", "friction", "sharing", "money", "ideas"] as const;
 export type ReportName = (typeof REPORT_NAMES)[number];
 
 export function isReportName(name: string): name is ReportName {
@@ -87,6 +87,29 @@ export function queriesFor(name: ReportName, config: ReportConfig, period: Perio
   const accounts = `(SELECT id FROM ${fs("users")} WHERE ARRAY_LENGTH(IFNULL(JSON_QUERY_ARRAY(data, '$.loginTypes'), [])) > 0)`;
 
   switch (name) {
+    case "glance": {
+      // The standing totals, whatever the period: everyone with an account,
+      // what they have made, and who of them used the app in the last week.
+      const now = new Date();
+      return {
+        totals: {
+          sql: `
+            WITH acc AS ${accounts}
+            SELECT
+              (SELECT COUNT(*) FROM acc) AS users,
+              (SELECT COUNT(*) FROM ${fs("classes")} WHERE JSON_VALUE(data, '$.userId') IN (SELECT id FROM acc)) AS classes,
+              (SELECT COUNT(*) FROM ${fs("moves")} WHERE JSON_VALUE(data, '$.userId') IN (SELECT id FROM acc)) AS moves`,
+        },
+        lastWeek: {
+          sql: `
+            SELECT COUNT(DISTINCT user_id) AS active
+            FROM ${events}
+            WHERE _TABLE_SUFFIX BETWEEN @from AND @to AND user_id IN ${accounts}`,
+          params: { from: dayBefore(now, 6).replaceAll("-", ""), to: dayBefore(now, 0).replaceAll("-", "") },
+        },
+      };
+    }
+
     case "health":
       return {
         // Whether Google Analytics' export exists, how far it reaches and

@@ -84,7 +84,7 @@ test("the period is put in order and kept to real days", () => {
 test("every query is held to the period: Analytics by table day, app data by the day it was made", () => {
   for (const name of REPORT_NAMES) {
     for (const [section, q] of Object.entries(queriesFor(name, { project: "p", gaDataset: "a", fsDataset: "f" }, { from: "2026-10-01", to: "2026-10-15" }))) {
-      if (name === "health" && section !== "events") continue;
+      if (name === "glance" || (name === "health" && section !== "events")) continue;
       if (/@from\b/.test(q.sql)) assert.equal(q.params?.from, "20261001", `${name}/${section}`);
       if (q.sql.includes("@fromDate")) assert.equal(q.params?.fromDate, "2026-10-01", `${name}/${section}`);
       assert.ok(/@from|@fromDate/.test(q.sql), `${name}/${section} ignores the period`);

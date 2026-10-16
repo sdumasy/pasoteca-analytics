@@ -12,6 +12,8 @@ const weeksBack = (n: number) => {
 
 export function demoReport(name: ReportName): Record<string, Row[]> {
   switch (name) {
+    case "glance":
+      return { totals: [{ users: 118, classes: 690, moves: 1880 }], lastWeek: [{ active: 41 }] };
     case "health":
       return {
         ga: [{ tables: 34, first_day: "20260913", last_day: "20261015", events: 48210, updated: "2026-10-16 06:12" }],

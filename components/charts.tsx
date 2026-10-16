@@ -131,30 +131,50 @@ export function Funnel({ steps, weakest }: { steps: FunnelStep[]; weakest: strin
   );
 }
 
-/// Labelled horizontal bars for one measure across categories.
+/// Labelled horizontal bars for one measure across categories, or two
+/// measures side by side when [secondUnit] is given: each row then has a
+/// solid bar for the first and a lighter one beneath it for the second, on
+/// one shared scale, with a key above.
 export function Breakdown({
   rows,
   unit,
+  secondUnit,
   format = (v) => v.toLocaleString(),
 }: {
-  rows: { label: string; value: number; detail?: string }[];
+  rows: { label: string; value: number; second?: number; detail?: string }[];
   unit: string;
+  secondUnit?: string;
   format?: (v: number) => string;
 }) {
   const { hover, bind } = useHover<(typeof rows)[number]>();
-  const max = Math.max(1, ...rows.map((r) => r.value));
+  const paired = Boolean(secondUnit);
+  const max = Math.max(1, ...rows.map((r) => Math.max(r.value, r.second ?? 0)));
   if (rows.length === 0) return <p className="empty">Nothing recorded in this period yet.</p>;
   return (
     <div className="chart">
+      {paired ? (
+        <div className="key" aria-hidden="true">
+          <span className="key-item"><span className="swatch" />{unit}</span>
+          <span className="key-item"><span className="swatch second" />{secondUnit}</span>
+        </div>
+      ) : null}
       <div className="bars">
         {rows.map((row) => (
-          <div className="bar-row" key={row.label} {...bind(row)}>
+          <div className={`bar-row${paired ? " paired" : ""}`} key={row.label} {...bind(row)}>
             <div className="bar-label">{row.label}</div>
-            <div className="bar-track">
-              <div className="bar-fill" style={{ width: `${(row.value / max) * 100}%` }} />
+            <div className="bar-pair">
+              <div className="bar-track">
+                <div className="bar-fill" style={{ width: `${(row.value / max) * 100}%` }} />
+              </div>
+              {paired ? (
+                <div className="bar-track thin">
+                  <div className="bar-fill second" style={{ width: `${((row.second ?? 0) / max) * 100}%` }} />
+                </div>
+              ) : null}
             </div>
             <div className="bar-value">
               <span className="num">{format(row.value)}</span>
+              {paired ? <span className="step-share">{format(row.second ?? 0)}</span> : null}
             </div>
           </div>
         ))}
@@ -165,10 +185,18 @@ export function Breakdown({
           <div>
             {format(hover.item.value)} {unit}
           </div>
+          {paired ? (
+            <div>
+              {format(hover.item.second ?? 0)} {secondUnit}
+            </div>
+          ) : null}
           {hover.item.detail ? <div>{hover.item.detail}</div> : null}
         </Tooltip>
       ) : null}
-      <TableView head={["", unit]} rows={rows.map((r) => [r.label, format(r.value)])} />
+      <TableView
+        head={paired ? ["", unit, secondUnit!] : ["", unit]}
+        rows={rows.map((r) => (paired ? [r.label, format(r.value), format(r.second ?? 0)] : [r.label, format(r.value)]))}
+      />
     </div>
   );
 }
