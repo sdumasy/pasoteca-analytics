@@ -81,6 +81,9 @@ export async function GET(request: Request, { params }: { params: { name: string
       project: PROJECT,
       gaDataset: gaDataset || "GA_DATASET_NOT_SET",
       fsDataset: process.env.FS_DATASET ?? "firestore_export",
+      // Test logins left out of every count; more can be added, comma
+      // separated, in TEST_ACCOUNTS on the service.
+      excluded: (process.env.TEST_ACCOUNTS ?? "playtest@pasoteca.com").split(","),
     },
     period,
   );

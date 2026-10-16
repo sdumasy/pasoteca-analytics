@@ -14,6 +14,9 @@ export interface ReportConfig {
   project: string;
   gaDataset: string;
   fsDataset: string;
+  /// Accounts that are not dancers (Play's pre-launch robot, the team's
+  /// own test logins), by email, left out of every count.
+  excluded?: string[];
 }
 
 /// The days a report covers, both included, as `YYYY-MM-DD`.
@@ -84,7 +87,13 @@ export function queriesFor(name: ReportName, config: ReportConfig, period: Perio
   // which is also the Analytics user_id. Guests, Play's test bots and anyone
   // who opened the app and left are not dancers yet. The uid stays the same
   // when a guest signs up, so what they did as a guest still counts.
-  const accounts = `(SELECT id FROM ${fs("users")} WHERE ARRAY_LENGTH(IFNULL(JSON_QUERY_ARRAY(data, '$.loginTypes'), [])) > 0)`;
+  const left = (config.excluded ?? [])
+    .map((email) => email.trim().toLowerCase())
+    .filter((email) => /^[^\s'"\\]+@[^\s'"\\]+$/.test(email))
+    .map((email) => `'${email}'`);
+  const accounts = `(SELECT id FROM ${fs("users")} WHERE ARRAY_LENGTH(IFNULL(JSON_QUERY_ARRAY(data, '$.loginTypes'), [])) > 0${
+    left.length ? ` AND LOWER(IFNULL(JSON_VALUE(data, '$.email'), '')) NOT IN (${left.join(", ")})` : ""
+  })`;
 
   switch (name) {
     case "glance": {

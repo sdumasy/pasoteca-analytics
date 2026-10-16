@@ -91,3 +91,12 @@ test("every query is held to the period: Analytics by table day, app data by the
     }
   }
 });
+
+test("test accounts are left out, and only well-formed addresses reach the SQL", () => {
+  const q = queriesFor("glance", { project: "p", gaDataset: "a", fsDataset: "f", excluded: ["Playtest@pasoteca.com", "x' OR 1=1 --"] }, {
+    from: "2026-10-01",
+    to: "2026-10-15",
+  }).totals;
+  assert.match(q.sql, /NOT IN \('playtest@pasoteca.com'\)/);
+  assert.doesNotMatch(q.sql, /OR 1=1/);
+});
