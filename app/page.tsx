@@ -26,6 +26,8 @@ interface Report {
   demo: boolean;
   sections: Sections;
   errors?: Record<string, string>;
+  /// The day counting starts, `YYYY-MM-DD`.
+  since?: string;
 }
 
 const QUESTIONS: { id: ReportName; title: string }[] = [
@@ -105,7 +107,9 @@ export default function Page() {
     <main className="page">
       <header className="top">
         <div>
-          <div className="eyebrow">Pasoteca · production</div>
+          <div className="eyebrow">
+            Pasoteca · production{Object.values(reports).find((r) => r?.since)?.since ? ` · counting from ${Object.values(reports).find((r) => r?.since)!.since}` : ""}
+          </div>
           <h1>How dancers use the app</h1>
         </div>
         <div className="top-controls">

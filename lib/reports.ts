@@ -14,6 +14,21 @@ export interface ReportConfig {
   project: string;
   gaDataset: string;
   fsDataset: string;
+  /// `YYYYMMDD`: Analytics before this day is test traffic and never counted.
+  since?: string;
+}
+
+/// The first day an Analytics query reads: [days] back, but never before
+/// [since], the day the app's real use began.
+export function firstDay(now: Date, days: number, since?: string): string {
+  const back = suffix(now, days);
+  return since && /^\d{8}$/.test(since) && since > back ? since : back;
+}
+
+/// `YYYY-MM-DD` (as configured) to the GA tables' `YYYYMMDD`, or undefined.
+export function sinceSuffix(value: string | undefined): string | undefined {
+  const digits = (value ?? "").replaceAll("-", "").trim();
+  return /^\d{8}$/.test(digits) ? digits : undefined;
 }
 
 export interface Query {
@@ -53,7 +68,7 @@ const int = (key: string) => `(SELECT value.int_value FROM UNNEST(event_params) 
 export function queriesFor(name: ReportName, config: ReportConfig, days: number, now = new Date()): Record<string, Query> {
   const events = `\`${config.project}.${config.gaDataset}.events_*\``;
   const fs = (table: string) => `\`${config.project}.${config.fsDataset}.${table}\``;
-  const range = { from: suffix(now, days), to: suffix(now, 0) };
+  const range = { from: firstDay(now, days, config.since), to: suffix(now, 0) };
   const inRange = `_TABLE_SUFFIX BETWEEN @from AND @to`;
 
   switch (name) {

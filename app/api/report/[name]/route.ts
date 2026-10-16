@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cert, getApps, initializeApp, applicationDefault } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { isReportName, queriesFor, type Row } from "@/lib/reports";
+import { isReportName, queriesFor, sinceSuffix, type Row } from "@/lib/reports";
 import { demoReport } from "@/lib/demo";
 import { allowedEmails, mayView } from "@/lib/access";
 import { run } from "@/lib/bigquery";
@@ -10,6 +10,9 @@ export const dynamic = "force-dynamic";
 
 const PROJECT = process.env.GCP_PROJECT ?? "p-pasoteca";
 const DEMO = process.env.DEMO === "1";
+/// The day real use began; Analytics from before it was testing. Moved by
+/// setting COUNT_FROM (YYYY-MM-DD) on the service.
+const SINCE = process.env.COUNT_FROM ?? "2026-10-17";
 
 function admin() {
   if (getApps().length === 0) {
@@ -69,7 +72,12 @@ export async function GET(request: Request, { params }: { params: { name: string
   const gaDataset = process.env.GA_DATASET ?? "";
   const queries = queriesFor(
     name,
-    { project: PROJECT, gaDataset: gaDataset || "GA_DATASET_NOT_SET", fsDataset: process.env.FS_DATASET ?? "firestore_export" },
+    {
+      project: PROJECT,
+      gaDataset: gaDataset || "GA_DATASET_NOT_SET",
+      fsDataset: process.env.FS_DATASET ?? "firestore_export",
+      since: sinceSuffix(SINCE),
+    },
     days,
   );
   const sections: Record<string, Row[]> = {};
@@ -92,7 +100,7 @@ export async function GET(request: Request, { params }: { params: { name: string
       }
     }),
   );
-  const body = { demo: false, days, sections, errors };
+  const body = { demo: false, days, since: SINCE, sections, errors };
   cache.set(key, { at: Date.now(), body });
   return NextResponse.json(body);
 }

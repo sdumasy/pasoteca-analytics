@@ -61,3 +61,14 @@ test("a first visit on the web counts as opening the app", () => {
   const q = queriesFor("funnel", { project: "p", gaDataset: "a", fsDataset: "f" }, 30).steps;
   assert.match(q.sql, /first_visit/);
 });
+
+import { firstDay, sinceSuffix } from "../lib/reports.ts";
+
+test("Analytics is read from the start date when it is later than the period", () => {
+  const now = new Date(Date.UTC(2026, 9, 20));
+  assert.equal(firstDay(now, 30, "20261016"), "20261016");
+  assert.equal(firstDay(now, 2, "20261016"), "20261018");
+  assert.equal(firstDay(now, 30, undefined), "20260920");
+  assert.equal(sinceSuffix("2026-10-16"), "20261016");
+  assert.equal(sinceSuffix("soon"), undefined);
+});
