@@ -45,10 +45,9 @@ export function isReportName(name: string): name is ReportName {
 
 /// The steps of the first-week funnel, in order, with what the page calls them.
 export const FUNNEL_STEPS: ReadonlyArray<[event: string, label: string]> = [
-  ["first_open", "Opened the app"],
+  ["sign_up", "Made an account"],
   ["class_created", "Logged a class"],
   ["move_clipped", "Cut a move"],
-  ["sign_up", "Made an account"],
   ["session_started", "Started practising"],
   ["session_completed", "Finished a session"],
   ["paywall_viewed", "Saw the paywall"],
@@ -70,6 +69,11 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
   const fs = (table: string) => `\`${config.project}.${config.fsDataset}.${table}\``;
   const range = { from: firstDay(now, days, config.since), to: suffix(now, 0) };
   const inRange = `_TABLE_SUFFIX BETWEEN @from AND @to`;
+  // Dancers with a real account (email, Google or Apple), by their uid,
+  // which is also the Analytics user_id. Guests, Play's test bots and anyone
+  // who opened the app and left are not dancers yet. The uid stays the same
+  // when a guest signs up, so what they did as a guest still counts.
+  const accounts = `(SELECT id FROM ${fs("users")} WHERE ARRAY_LENGTH(IFNULL(JSON_QUERY_ARRAY(data, '$.loginTypes'), [])) > 0)`;
 
   switch (name) {
     case "health":
@@ -106,17 +110,18 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
     case "funnel":
       return {
         steps: {
-          // Dancers who first opened the app in the window, and how many of
-          // them reached each step since, with the median time it took.
+          // Dancers who made an account in the window, and how many of them
+          // reached each step (before or after signing up), with the median
+          // time from their first event.
           sql: `
             WITH ev AS (
-              -- The web app records first_visit where the phone apps record
-              -- first_open; both are the dancer arriving.
-              SELECT user_pseudo_id AS u, IF(event_name = 'first_visit', 'first_open', event_name) AS n,
-                TIMESTAMP_MICROS(event_timestamp) AS t
-              FROM ${events} WHERE ${inRange}
+              SELECT user_id AS u, event_name AS n, TIMESTAMP_MICROS(event_timestamp) AS t
+              FROM ${events} WHERE ${inRange} AND user_id IN ${accounts}
             ),
-            newcomers AS (SELECT u, MIN(t) AS first_t FROM ev WHERE n = 'first_open' GROUP BY u),
+            newcomers AS (
+              SELECT u, MIN(t) AS first_t FROM ev
+              WHERE u IN (SELECT u FROM ev WHERE n = 'sign_up') GROUP BY u
+            ),
             firsts AS (
               SELECT n, u, MIN(t) AS t FROM ev JOIN newcomers USING (u) GROUP BY n, u
             )
@@ -147,14 +152,16 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
           // of each were back in each following week.
           sql: `
             WITH ev AS (
-              SELECT DISTINCT user_pseudo_id AS u, DATE_TRUNC(PARSE_DATE('%Y%m%d', event_date), WEEK(MONDAY)) AS w
-              FROM ${events} WHERE ${inRange}
+              SELECT DISTINCT user_id AS u, DATE_TRUNC(PARSE_DATE('%Y%m%d', event_date), WEEK(MONDAY)) AS w
+              FROM ${events} WHERE ${inRange} AND user_id IN ${accounts}
             ),
-            cohort AS (SELECT u, MIN(w) AS cohort FROM ev GROUP BY u)
-            SELECT FORMAT_DATE('%Y-%m-%d', cohort) AS cohort, DATE_DIFF(w, cohort, WEEK) AS week, COUNT(DISTINCT u) AS users
-            FROM ev JOIN cohort USING (u)
-            WHERE DATE_DIFF(w, cohort, WEEK) BETWEEN 0 AND 8
-            GROUP BY cohort, week ORDER BY cohort, week`,
+            -- Named apart from its column: a table called cohort made
+            -- "cohort" the whole row, and DATE_DIFF refused it.
+            firsts AS (SELECT u, MIN(w) AS first_week FROM ev GROUP BY u)
+            SELECT FORMAT_DATE('%Y-%m-%d', first_week) AS cohort, DATE_DIFF(w, first_week, WEEK) AS week, COUNT(DISTINCT u) AS users
+            FROM ev JOIN firsts USING (u)
+            WHERE DATE_DIFF(w, first_week, WEEK) BETWEEN 0 AND 8
+            GROUP BY first_week, week ORDER BY first_week, week`,
           params: range,
         },
       };
@@ -164,7 +171,7 @@ export function queriesFor(name: ReportName, config: ReportConfig, days: number,
         weeks: {
           sql: `
             SELECT FORMAT_DATE('%Y-%m-%d', DATE_TRUNC(PARSE_DATE('%Y%m%d', event_date), WEEK(MONDAY))) AS week,
-              COUNT(DISTINCT user_pseudo_id) AS active_users,
+              COUNT(DISTINCT IF(user_id IN ${accounts}, user_id, NULL)) AS active_users,
               COUNTIF(event_name = 'class_created' AND ${str("is_edit")} = 'false') AS classes,
               COUNTIF(event_name = 'move_clipped' AND ${str("is_edit")} = 'false') AS moves,
               COUNTIF(event_name = 'session_completed') AS sessions

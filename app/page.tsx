@@ -230,13 +230,13 @@ function Answer({ id, report, days }: { id: ReportName; report: Report; days: nu
         <>
           <Tiles
             items={[
-              { label: `New dancers, last ${days} days`, value: opened.toLocaleString() },
-              { label: "Cut a first move", value: percent(steps[2]?.ofStart ?? null), note: `median ${duration(steps[2]?.medianMinutes ?? null)} after opening` },
-              { label: "Made an account", value: percent(steps[3]?.ofStart ?? null) },
+              { label: `New accounts, last ${days} days`, value: opened.toLocaleString() },
+              { label: "Cut a first move", value: percent(steps[2]?.ofStart ?? null), note: `median ${duration(steps[2]?.medianMinutes ?? null)} after first opening` },
+              { label: "Finished a session", value: percent(steps[4]?.ofStart ?? null) },
               { label: "Weakest step", value: weakest?.label ?? "–", note: weakest ? `${percent(weakest.ofPrevious)} of the step before` : undefined },
             ]}
           />
-          <Card title="From first open to Pro" note="Dancers who first opened the app in this period, and how many reached each step since.">
+          <Card title="From account to Pro" note="Dancers who made an account in this period, and how many of them reached each step, as a guest before or after. Guests who never made an account are left out.">
             <Funnel steps={steps} weakest={weakest?.label ?? null} />
           </Card>
           <Card title="How new accounts were made" note={`${percent(share(fromGuest, allSignups))} started as a guest and kept their moves by signing up.`}>
@@ -275,7 +275,7 @@ function Answer({ id, report, days }: { id: ReportName; report: Report; days: nu
           <WeeklyMultiples
             weeks={weeks}
             measures={[
-              { key: "active_users", label: "Active dancers" },
+              { key: "active_users", label: "Active dancers with an account" },
               { key: "classes", label: "Classes logged" },
               { key: "moves", label: "Moves cut" },
               { key: "sessions", label: "Sessions finished" },

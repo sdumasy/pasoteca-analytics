@@ -28,8 +28,8 @@ export function demoReport(name: ReportName): Record<string, Row[]> {
         ],
       };
     case "funnel": {
-      const users = [412, 233, 151, 118, 84, 71, 39, 11];
-      const minutes = [0, 9, 26, 31, 1440, 1460, 2880, 4320];
+      const users = [412, 233, 151, 118, 84, 39, 11];
+      const minutes = [0, 9, 26, 1440, 1460, 2880, 4320];
       return {
         steps: FUNNEL_STEPS.map(([step], pos) => ({ step, pos, users: users[pos], median_minutes: minutes[pos] })),
         guests: [

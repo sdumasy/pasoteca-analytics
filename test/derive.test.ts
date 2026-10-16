@@ -57,9 +57,21 @@ test("only a verified address on the list may see the numbers", () => {
   assert.ok(!mayView({ email: "owner@example.com", email_verified: true }, allowedEmails("")));
 });
 
-test("a first visit on the web counts as opening the app", () => {
-  const q = queriesFor("funnel", { project: "p", gaDataset: "a", fsDataset: "f" }, 30).steps;
-  assert.match(q.sql, /first_visit/);
+test("only dancers with an account count: the funnel, the cohorts and the active dancers", () => {
+  const config = { project: "p", gaDataset: "a", fsDataset: "f" };
+  for (const q of [
+    queriesFor("funnel", config, 30).steps,
+    queriesFor("retention", config, 30).cohorts,
+    queriesFor("weekly", config, 30).weeks,
+  ]) {
+    assert.match(q.sql, /loginTypes/);
+    assert.match(q.sql, /user_id IN/);
+  }
+});
+
+test("the cohort table is not named like its column", () => {
+  const q = queriesFor("retention", { project: "p", gaDataset: "a", fsDataset: "f" }, 30).cohorts;
+  assert.doesNotMatch(q.sql, /\bcohort AS \(/);
 });
 
 import { firstDay, sinceSuffix } from "../lib/reports.ts";
